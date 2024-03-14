@@ -24,6 +24,7 @@ const (
 	rpcRequestVote
 	rpcInstallSnapshot
 	rpcTimeoutNow
+	rpcForwardApply
 
 	// DefaultTimeoutScale is the default TimeoutScale in a NetworkTransport.
 	DefaultTimeoutScale = 256 * 1024 // 256KB
@@ -260,7 +261,12 @@ func NewNetworkTransport(
 		Output: logOutput,
 		Level:  hclog.DefaultLevel,
 	})
-	config := &NetworkTransportConfig{Stream: stream, MaxPool: maxPool, Timeout: timeout, Logger: logger}
+	config := &NetworkTransportConfig{
+		Stream:  stream,
+		MaxPool: maxPool,
+		Timeout: timeout,
+		Logger:  logger,
+	}
 	return NewNetworkTransportWithConfig(config)
 }
 
@@ -274,7 +280,12 @@ func NewNetworkTransportWithLogger(
 	timeout time.Duration,
 	logger hclog.Logger,
 ) *NetworkTransport {
-	config := &NetworkTransportConfig{Stream: stream, MaxPool: maxPool, Timeout: timeout, Logger: logger}
+	config := &NetworkTransportConfig{
+		Stream:  stream,
+		MaxPool: maxPool,
+		Timeout: timeout,
+		Logger:  logger,
+	}
 	return NewNetworkTransportWithConfig(config)
 }
 
@@ -378,16 +389,30 @@ func (n *NetworkTransport) getPooledConn(target ServerAddress) *netConn {
 }
 
 // getConnFromAddressProvider returns a connection from the server address provider if available, or defaults to a connection using the target server address
-func (n *NetworkTransport) getConnFromAddressProvider(id ServerID, target ServerAddress) (*netConn, error) {
+func (n *NetworkTransport) getConnFromAddressProvider(
+	id ServerID,
+	target ServerAddress,
+) (*netConn, error) {
 	address := n.getProviderAddressOrFallback(id, target)
 	return n.getConn(address)
 }
 
-func (n *NetworkTransport) getProviderAddressOrFallback(id ServerID, target ServerAddress) ServerAddress {
+func (n *NetworkTransport) getProviderAddressOrFallback(
+	id ServerID,
+	target ServerAddress,
+) ServerAddress {
 	if n.serverAddressProvider != nil {
 		serverAddressOverride, err := n.serverAddressProvider.ServerAddr(id)
 		if err != nil {
-			n.logger.Warn("unable to get address for server, using fallback address", "id", id, "fallback", target, "error", err)
+			n.logger.Warn(
+				"unable to get address for server, using fallback address",
+				"id",
+				id,
+				"fallback",
+				target,
+				"error",
+				err,
+			)
 		} else {
 			return serverAddressOverride
 		}
@@ -443,7 +468,10 @@ func (n *NetworkTransport) returnConn(conn *netConn) {
 
 // AppendEntriesPipeline returns an interface that can be used to pipeline
 // AppendEntries requests.
-func (n *NetworkTransport) AppendEntriesPipeline(id ServerID, target ServerAddress) (AppendPipeline, error) {
+func (n *NetworkTransport) AppendEntriesPipeline(
+	id ServerID,
+	target ServerAddress,
+) (AppendPipeline, error) {
 	if n.maxInFlight < minInFlightForPipelining {
 		// Pipelining is disabled since no more than one request can be outstanding
 		// at once. Skip the whole code path and use synchronous requests.
@@ -461,17 +489,33 @@ func (n *NetworkTransport) AppendEntriesPipeline(id ServerID, target ServerAddre
 }
 
 // AppendEntries implements the Transport interface.
-func (n *NetworkTransport) AppendEntries(id ServerID, target ServerAddress, args *AppendEntriesRequest, resp *AppendEntriesResponse) error {
+func (n *NetworkTransport) AppendEntries(
+	id ServerID,
+	target ServerAddress,
+	args *AppendEntriesRequest,
+	resp *AppendEntriesResponse,
+) error {
 	return n.genericRPC(id, target, rpcAppendEntries, args, resp)
 }
 
 // RequestVote implements the Transport interface.
-func (n *NetworkTransport) RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error {
+func (n *NetworkTransport) RequestVote(
+	id ServerID,
+	target ServerAddress,
+	args *RequestVoteRequest,
+	resp *RequestVoteResponse,
+) error {
 	return n.genericRPC(id, target, rpcRequestVote, args, resp)
 }
 
 // genericRPC handles a simple request/response RPC.
-func (n *NetworkTransport) genericRPC(id ServerID, target ServerAddress, rpcType uint8, args interface{}, resp interface{}) error {
+func (n *NetworkTransport) genericRPC(
+	id ServerID,
+	target ServerAddress,
+	rpcType uint8,
+	args interface{},
+	resp interface{},
+) error {
 	// Get a conn
 	conn, err := n.getConnFromAddressProvider(id, target)
 	if err != nil {
@@ -497,7 +541,13 @@ func (n *NetworkTransport) genericRPC(id ServerID, target ServerAddress, rpcType
 }
 
 // InstallSnapshot implements the Transport interface.
-func (n *NetworkTransport) InstallSnapshot(id ServerID, target ServerAddress, args *InstallSnapshotRequest, resp *InstallSnapshotResponse, data io.Reader) error {
+func (n *NetworkTransport) InstallSnapshot(
+	id ServerID,
+	target ServerAddress,
+	args *InstallSnapshotRequest,
+	resp *InstallSnapshotResponse,
+	data io.Reader,
+) error {
 	// Get a conn, always close for InstallSnapshot
 	conn, err := n.getConnFromAddressProvider(id, target)
 	if err != nil {
@@ -546,8 +596,22 @@ func (n *NetworkTransport) DecodePeer(buf []byte) ServerAddress {
 }
 
 // TimeoutNow implements the Transport interface.
-func (n *NetworkTransport) TimeoutNow(id ServerID, target ServerAddress, args *TimeoutNowRequest, resp *TimeoutNowResponse) error {
+func (n *NetworkTransport) TimeoutNow(
+	id ServerID,
+	target ServerAddress,
+	args *TimeoutNowRequest,
+	resp *TimeoutNowResponse,
+) error {
 	return n.genericRPC(id, target, rpcTimeoutNow, args, resp)
+}
+
+func (n *NetworkTransport) ForwardApply(
+	id ServerID,
+	target ServerAddress,
+	args *ForwardApplyRequest,
+	resp *ForwardApplyResponse,
+) error {
+	return n.genericRPC(id, target, rpcForwardApply, args, resp)
 }
 
 // listen is used to handling incoming connections.
@@ -584,7 +648,13 @@ func (n *NetworkTransport) listen() {
 		// No error, reset loop delay
 		loopDelay = 0
 
-		n.logger.Debug("accepted connection", "local-address", n.LocalAddr(), "remote-address", conn.RemoteAddr().String())
+		n.logger.Debug(
+			"accepted connection",
+			"local-address",
+			n.LocalAddr(),
+			"remote-address",
+			conn.RemoteAddr().String(),
+		)
 
 		// Handle the connection in dedicated routine
 		go n.handleConn(n.getStreamContext(), conn)
@@ -627,7 +697,11 @@ func (n *NetworkTransport) handleConn(connCtx context.Context, conn net.Conn) {
 }
 
 // handleCommand is used to decode and dispatch a single command.
-func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
+func (n *NetworkTransport) handleCommand(
+	r *bufio.Reader,
+	dec *codec.Decoder,
+	enc *codec.Encoder,
+) error {
 	getTypeStart := time.Now()
 
 	// Get the rpc type
@@ -697,6 +771,13 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 		}
 		rpc.Command = &req
 		labels = []metrics.Label{{Name: "rpcType", Value: "TimeoutNow"}}
+	case rpcForwardApply:
+		var req ForwardApplyRequest
+		if err := dec.Decode(&req); err != nil {
+			return err
+		}
+		rpc.Command = &req
+		labels = []metrics.Label{{Name: "rpcType", Value: "ForwardApply"}}
 	default:
 		return fmt.Errorf("unknown rpc type %d", rpcType)
 	}
@@ -730,7 +811,11 @@ RESP:
 	respWaitStart := time.Now()
 	select {
 	case resp := <-respCh:
-		defer metrics.MeasureSinceWithLabels([]string{"raft", "net", "rpcRespond"}, respWaitStart, labels)
+		defer metrics.MeasureSinceWithLabels(
+			[]string{"raft", "net", "rpcRespond"},
+			respWaitStart,
+			labels,
+		)
 		// Send the error first
 		respErr := ""
 		if resp.Error != nil {
@@ -845,7 +930,10 @@ func (n *netPipeline) decodeResponses() {
 }
 
 // AppendEntries is used to pipeline a new append entries request.
-func (n *netPipeline) AppendEntries(args *AppendEntriesRequest, resp *AppendEntriesResponse) (AppendFuture, error) {
+func (n *netPipeline) AppendEntries(
+	args *AppendEntriesRequest,
+	resp *AppendEntriesResponse,
+) (AppendFuture, error) {
 	// Create a new future
 	future := &appendFuture{
 		start: time.Now(),

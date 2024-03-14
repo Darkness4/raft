@@ -110,7 +110,10 @@ func (r *Raft) setLeader(leaderAddr ServerAddress, leaderID ServerID) {
 // requestConfigChange is a helper for the above functions that make
 // configuration change requests. 'req' describes the change. For timeout,
 // see AddVoter.
-func (r *Raft) requestConfigChange(req configurationChangeRequest, timeout time.Duration) IndexFuture {
+func (r *Raft) requestConfigChange(
+	req configurationChangeRequest,
+	timeout time.Duration,
+) IndexFuture {
 	var timer <-chan time.Time
 	if timeout > 0 {
 		timer = time.After(timeout)
@@ -156,7 +159,15 @@ func (r *Raft) run() {
 func (r *Raft) runFollower() {
 	didWarn := false
 	leaderAddr, leaderID := r.LeaderWithID()
-	r.logger.Info("entering follower state", "follower", r, "leader-address", leaderAddr, "leader-id", leaderID)
+	r.logger.Info(
+		"entering follower state",
+		"follower",
+		r,
+		"leader-address",
+		leaderAddr,
+		"leader-id",
+		leaderID,
+	)
 	metrics.IncrCounter([]string{"raft", "state", "follower"}, 1)
 	heartbeatTimer := randomTimeout(r.config().HeartbeatTimeout)
 
@@ -324,7 +335,15 @@ func (r *Raft) runCandidate() {
 			// Check if the vote is granted
 			if vote.Granted {
 				grantedVotes++
-				r.logger.Debug("vote granted", "from", vote.voterID, "term", vote.Term, "tally", grantedVotes)
+				r.logger.Debug(
+					"vote granted",
+					"from",
+					vote.voterID,
+					"term",
+					vote.Term,
+					"tally",
+					grantedVotes,
+				)
 			}
 
 			// Check if we've become the leader
@@ -648,7 +667,13 @@ func (r *Raft) leaderLoop() {
 				continue
 			}
 
-			r.logger.Debug("starting leadership transfer", "id", future.ID, "address", future.Address)
+			r.logger.Debug(
+				"starting leadership transfer",
+				"id",
+				future.ID,
+				"address",
+				future.Address,
+			)
 
 			// When we are leaving leaderLoop, we are no longer
 			// leader, so we should stop transferring.
@@ -939,7 +964,13 @@ func (r *Raft) verifyLeader(v *verifyFuture) {
 }
 
 // leadershipTransfer is doing the heavy lifting for the leadership transfer.
-func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *followerReplication, stopCh chan struct{}, doneCh chan error) {
+func (r *Raft) leadershipTransfer(
+	id ServerID,
+	address ServerAddress,
+	repl *followerReplication,
+	stopCh chan struct{},
+	doneCh chan error,
+) {
 	// make sure we are not already stopped
 	select {
 	case <-stopCh:
@@ -974,7 +1005,12 @@ func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *foll
 	// heartbeats are still coming in.
 
 	// Step 3: send TimeoutNow message to target server.
-	err := r.trans.TimeoutNow(id, address, &TimeoutNowRequest{RPCHeader: r.getRPCHeader()}, &TimeoutNowResponse{})
+	err := r.trans.TimeoutNow(
+		id,
+		address,
+		&TimeoutNowRequest{RPCHeader: r.getRPCHeader()},
+		&TimeoutNowResponse{},
+	)
 	if err != nil {
 		err = fmt.Errorf("failed to make TimeoutNow RPC to %v: %v", id, err)
 	}
@@ -1018,7 +1054,10 @@ func (r *Raft) checkLeaderLease() time.Duration {
 					r.logger.Debug("failed to contact", "server-id", server.ID, "time", diff)
 				}
 			}
-			metrics.AddSample([]string{"raft", "leader", "lastContact"}, float32(diff/time.Millisecond))
+			metrics.AddSample(
+				[]string{"raft", "leader", "lastContact"},
+				float32(diff/time.Millisecond),
+			)
 		}
 	}
 
@@ -1068,8 +1107,11 @@ func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
 	committedIndex := r.configurations.committedIndex
 	latestIndex := r.configurations.latestIndex
 	if committedIndex != latestIndex {
-		return fmt.Errorf("cannot restore snapshot now, wait until the configuration entry at %v has been applied (have applied %v)",
-			latestIndex, committedIndex)
+		return fmt.Errorf(
+			"cannot restore snapshot now, wait until the configuration entry at %v has been applied (have applied %v)",
+			latestIndex,
+			committedIndex,
+		)
 	}
 
 	// Cancel any inflight requests.
@@ -1153,7 +1195,11 @@ func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
 // configuration entry to the log. This must only be called from the
 // main thread.
 func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
-	configuration, err := nextConfiguration(r.configurations.latest, r.configurations.latestIndex, future.req)
+	configuration, err := nextConfiguration(
+		r.configurations.latest,
+		r.configurations.latestIndex,
+		future.req,
+	)
 	if err != nil {
 		future.respond(err)
 		return
@@ -1354,6 +1400,8 @@ func (r *Raft) processRPC(rpc RPC) {
 		r.installSnapshot(rpc, cmd)
 	case *TimeoutNowRequest:
 		r.timeoutNow(rpc, cmd)
+	case *ForwardApplyRequest:
+		r.forwardApply(rpc, cmd)
 	default:
 		r.logger.Error("got unexpected command",
 			"command", hclog.Fmt("%#v", rpc.Command))
@@ -1408,7 +1456,8 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 
 	// Increase the term if we see a newer one, also transition to follower
 	// if we ever get an appendEntries call
-	if a.Term > r.getCurrentTerm() || (r.getState() != Follower && !r.candidateFromLeadershipTransfer.Load()) {
+	if a.Term > r.getCurrentTerm() ||
+		(r.getState() != Follower && !r.candidateFromLeadershipTransfer.Load()) {
 		// Ensure transition to follower
 		r.setState(Follower)
 		r.setCurrentTerm(a.Term)
@@ -1476,7 +1525,10 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 					return
 				}
 				if entry.Index <= r.configurations.latestIndex {
-					r.setLatestConfiguration(r.configurations.committed, r.configurations.committedIndex)
+					r.setLatestConfiguration(
+						r.configurations.committed,
+						r.configurations.committedIndex,
+					)
 				}
 				newEntries = a.Entries[i:]
 				break
@@ -1590,13 +1642,15 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 		candidateID := ServerID(req.ID)
 		// if the Servers list is empty that mean the cluster is very likely trying to bootstrap,
 		// Grant the vote
-		if len(r.configurations.latest.Servers) > 0 && !inConfiguration(r.configurations.latest, candidateID) {
+		if len(r.configurations.latest.Servers) > 0 &&
+			!inConfiguration(r.configurations.latest, candidateID) {
 			r.logger.Warn("rejecting vote request since node is not in configuration",
 				"from", candidate)
 			return
 		}
 	}
-	if leaderAddr, leaderID := r.LeaderWithID(); leaderAddr != "" && leaderAddr != candidate && !req.LeadershipTransfer {
+	if leaderAddr, leaderID := r.LeaderWithID(); leaderAddr != "" && leaderAddr != candidate &&
+		!req.LeadershipTransfer {
 		r.logger.Warn("rejecting vote request since we have a leader",
 			"from", candidate,
 			"leader", leaderAddr,
@@ -1625,7 +1679,8 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 	// More details about that in https://github.com/hashicorp/raft/pull/526
 	if len(req.ID) > 0 {
 		candidateID := ServerID(req.ID)
-		if len(r.configurations.latest.Servers) > 0 && !hasVote(r.configurations.latest, candidateID) {
+		if len(r.configurations.latest.Servers) > 0 &&
+			!hasVote(r.configurations.latest, candidateID) {
 			r.logger.Warn("rejecting vote request since node is not a voter", "from", candidate)
 			return
 		}
@@ -1693,7 +1748,10 @@ func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
 	}
 	var rpcErr error
 	defer func() {
-		_, _ = io.Copy(io.Discard, rpc.Reader) // ensure we always consume all the snapshot data from the stream [see issue #212]
+		_, _ = io.Copy(
+			io.Discard,
+			rpc.Reader,
+		) // ensure we always consume all the snapshot data from the stream [see issue #212]
 		rpc.Respond(resp, rpcErr)
 	}()
 
@@ -1965,7 +2023,10 @@ func (r *Raft) pickServer() *Server {
 // initiateLeadershipTransfer starts the leadership on the leader side, by
 // sending a message to the leadershipTransferCh, to make sure it runs in the
 // mainloop.
-func (r *Raft) initiateLeadershipTransfer(id *ServerID, address *ServerAddress) LeadershipTransferFuture {
+func (r *Raft) initiateLeadershipTransfer(
+	id *ServerID,
+	address *ServerAddress,
+) LeadershipTransferFuture {
 	future := &leadershipTransferFuture{ID: id, Address: address}
 	future.init()
 
@@ -1992,6 +2053,11 @@ func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
 	r.setState(Candidate)
 	r.candidateFromLeadershipTransfer.Store(true)
 	rpc.Respond(&TimeoutNowResponse{}, nil)
+}
+
+func (r *Raft) forwardApply(rpc RPC, req *ForwardApplyRequest) {
+	future := r.Apply(req.Command, req.Timeout)
+	rpc.Respond(&ForwardApplyResponse{}, future.Error())
 }
 
 // setLatestConfiguration stores the latest configuration and updates a copy of it.

@@ -3,6 +3,8 @@
 
 package raft
 
+import "time"
+
 // RPCHeader is a common sub-structure used to pass along protocol version and
 // other information about the cluster. For older Raft implementations before
 // versioning was added this will default to a zero-valued structure when read
@@ -185,5 +187,28 @@ type TimeoutNowResponse struct {
 
 // GetRPCHeader - See WithRPCHeader.
 func (r *TimeoutNowResponse) GetRPCHeader() RPCHeader {
+	return r.RPCHeader
+}
+
+type ForwardApplyRequest struct {
+	RPCHeader
+
+	Command []byte
+	Timeout time.Duration
+}
+
+// GetRPCHeader - See WithRPCHeader.
+func (r *ForwardApplyRequest) GetRPCHeader() RPCHeader {
+	return r.RPCHeader
+}
+
+type ForwardApplyResponse struct {
+	RPCHeader
+
+	Response any
+}
+
+// GetRPCHeader - See WithRPCHeader.
+func (r *ForwardApplyResponse) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }

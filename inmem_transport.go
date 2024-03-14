@@ -50,7 +50,10 @@ type InmemTransport struct {
 // generates a random local address if none is specified. The given timeout
 // will be used to decide how long to wait for a connected peer to process the
 // RPCs that we're sending it. See also Connect() and Consumer().
-func NewInmemTransportWithTimeout(addr ServerAddress, timeout time.Duration) (ServerAddress, *InmemTransport) {
+func NewInmemTransportWithTimeout(
+	addr ServerAddress,
+	timeout time.Duration,
+) (ServerAddress, *InmemTransport) {
 	if string(addr) == "" {
 		addr = NewInmemAddr()
 	}
@@ -86,7 +89,10 @@ func (i *InmemTransport) LocalAddr() ServerAddress {
 
 // AppendEntriesPipeline returns an interface that can be used to pipeline
 // AppendEntries requests.
-func (i *InmemTransport) AppendEntriesPipeline(id ServerID, target ServerAddress) (AppendPipeline, error) {
+func (i *InmemTransport) AppendEntriesPipeline(
+	id ServerID,
+	target ServerAddress,
+) (AppendPipeline, error) {
 	i.Lock()
 	defer i.Unlock()
 
@@ -100,7 +106,12 @@ func (i *InmemTransport) AppendEntriesPipeline(id ServerID, target ServerAddress
 }
 
 // AppendEntries implements the Transport interface.
-func (i *InmemTransport) AppendEntries(id ServerID, target ServerAddress, args *AppendEntriesRequest, resp *AppendEntriesResponse) error {
+func (i *InmemTransport) AppendEntries(
+	id ServerID,
+	target ServerAddress,
+	args *AppendEntriesRequest,
+	resp *AppendEntriesResponse,
+) error {
 	rpcResp, err := i.makeRPC(target, args, nil, i.timeout)
 	if err != nil {
 		return err
@@ -113,7 +124,12 @@ func (i *InmemTransport) AppendEntries(id ServerID, target ServerAddress, args *
 }
 
 // RequestVote implements the Transport interface.
-func (i *InmemTransport) RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error {
+func (i *InmemTransport) RequestVote(
+	id ServerID,
+	target ServerAddress,
+	args *RequestVoteRequest,
+	resp *RequestVoteResponse,
+) error {
 	rpcResp, err := i.makeRPC(target, args, nil, i.timeout)
 	if err != nil {
 		return err
@@ -126,7 +142,13 @@ func (i *InmemTransport) RequestVote(id ServerID, target ServerAddress, args *Re
 }
 
 // InstallSnapshot implements the Transport interface.
-func (i *InmemTransport) InstallSnapshot(id ServerID, target ServerAddress, args *InstallSnapshotRequest, resp *InstallSnapshotResponse, data io.Reader) error {
+func (i *InmemTransport) InstallSnapshot(
+	id ServerID,
+	target ServerAddress,
+	args *InstallSnapshotRequest,
+	resp *InstallSnapshotResponse,
+	data io.Reader,
+) error {
 	rpcResp, err := i.makeRPC(target, args, data, 10*i.timeout)
 	if err != nil {
 		return err
@@ -139,7 +161,12 @@ func (i *InmemTransport) InstallSnapshot(id ServerID, target ServerAddress, args
 }
 
 // TimeoutNow implements the Transport interface.
-func (i *InmemTransport) TimeoutNow(id ServerID, target ServerAddress, args *TimeoutNowRequest, resp *TimeoutNowResponse) error {
+func (i *InmemTransport) TimeoutNow(
+	id ServerID,
+	target ServerAddress,
+	args *TimeoutNowRequest,
+	resp *TimeoutNowResponse,
+) error {
 	rpcResp, err := i.makeRPC(target, args, nil, 10*i.timeout)
 	if err != nil {
 		return err
@@ -151,7 +178,29 @@ func (i *InmemTransport) TimeoutNow(id ServerID, target ServerAddress, args *Tim
 	return nil
 }
 
-func (i *InmemTransport) makeRPC(target ServerAddress, args interface{}, r io.Reader, timeout time.Duration) (rpcResp RPCResponse, err error) {
+func (i *InmemTransport) ForwardApply(
+	id ServerID,
+	target ServerAddress,
+	args *ForwardApplyRequest,
+	resp *ForwardApplyResponse,
+) error {
+	rpcResp, err := i.makeRPC(target, args, nil, 10*i.timeout)
+	if err != nil {
+		return err
+	}
+
+	// Copy the result back
+	out := rpcResp.Response.(*ForwardApplyResponse)
+	*resp = *out
+	return nil
+}
+
+func (i *InmemTransport) makeRPC(
+	target ServerAddress,
+	args interface{},
+	r io.Reader,
+	timeout time.Duration,
+) (rpcResp RPCResponse, err error) {
 	i.RLock()
 	peer, ok := i.peers[target]
 	i.RUnlock()
@@ -244,7 +293,11 @@ func (i *InmemTransport) Close() error {
 	return nil
 }
 
-func newInmemPipeline(trans *InmemTransport, peer *InmemTransport, addr ServerAddress) *inmemPipeline {
+func newInmemPipeline(
+	trans *InmemTransport,
+	peer *InmemTransport,
+	addr ServerAddress,
+) *inmemPipeline {
 	i := &inmemPipeline{
 		trans:        trans,
 		peer:         peer,
@@ -296,7 +349,10 @@ func (i *inmemPipeline) decodeResponses() {
 	}
 }
 
-func (i *inmemPipeline) AppendEntries(args *AppendEntriesRequest, resp *AppendEntriesResponse) (AppendFuture, error) {
+func (i *inmemPipeline) AppendEntries(
+	args *AppendEntriesRequest,
+	resp *AppendEntriesResponse,
+) (AppendFuture, error) {
 	// Create a new future
 	future := &appendFuture{
 		start: time.Now(),
