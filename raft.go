@@ -1017,6 +1017,20 @@ func (r *Raft) leadershipTransfer(
 	doneCh <- err
 }
 
+func (r *Raft) ForwardApply(
+	id ServerID,
+	address ServerAddress,
+	command []byte,
+	timeout time.Duration,
+) error {
+	return r.trans.ForwardApply(
+		id,
+		address,
+		&ForwardApplyRequest{RPCHeader: r.getRPCHeader(), Command: command, Timeout: timeout},
+		&ForwardApplyResponse{},
+	)
+}
+
 // checkLeaderLease is used to check if we can contact a quorum of nodes
 // within the last leader lease interval. If not, we need to step down,
 // as we may have lost connectivity. Returns the maximum duration without
