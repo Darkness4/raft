@@ -611,7 +611,28 @@ func (n *NetworkTransport) ForwardApply(
 	args *ForwardApplyRequest,
 	resp *ForwardApplyResponse,
 ) error {
-	return n.genericRPC(id, target, rpcForwardApply, args, resp)
+	// Get a conn
+	conn, err := n.getConnFromAddressProvider(id, target)
+	if err != nil {
+		return err
+	}
+
+	// Set a deadline
+	// if n.timeout > 0 {
+	// 	conn.conn.SetDeadline(time.Now().Add(n.timeout))
+	// }
+
+	// Send the RPC
+	if err = sendRPC(conn, rpcForwardApply, args); err != nil {
+		return err
+	}
+
+	// Decode the response
+	canReturn, err := decodeResponse(conn, resp)
+	if canReturn {
+		n.returnConn(conn)
+	}
+	return err
 }
 
 // listen is used to handling incoming connections.

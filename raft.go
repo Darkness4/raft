@@ -1023,12 +1023,21 @@ func (r *Raft) ForwardApply(
 	command []byte,
 	timeout time.Duration,
 ) error {
-	return r.trans.ForwardApply(
+	var resp ForwardApplyResponse
+	if err := r.trans.ForwardApply(
 		id,
 		address,
 		&ForwardApplyRequest{RPCHeader: r.getRPCHeader(), Command: command, Timeout: timeout},
-		&ForwardApplyResponse{},
-	)
+		&resp,
+	); err != nil {
+		return err
+	}
+	switch resp.Response.(type) {
+	case error:
+		return resp.Response.(error)
+	default:
+		return nil
+	}
 }
 
 // checkLeaderLease is used to check if we can contact a quorum of nodes
@@ -1415,7 +1424,9 @@ func (r *Raft) processRPC(rpc RPC) {
 	case *TimeoutNowRequest:
 		r.timeoutNow(rpc, cmd)
 	case *ForwardApplyRequest:
-		r.forwardApply(rpc, cmd)
+		r.goFunc(func() {
+			r.forwardApply(rpc, cmd)
+		})
 	default:
 		r.logger.Error("got unexpected command",
 			"command", hclog.Fmt("%#v", rpc.Command))
@@ -2071,7 +2082,16 @@ func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
 
 func (r *Raft) forwardApply(rpc RPC, req *ForwardApplyRequest) {
 	future := r.Apply(req.Command, req.Timeout)
-	rpc.Respond(&ForwardApplyResponse{}, future.Error())
+	var response any
+	if err := future.Error(); err != nil {
+		response = err
+	} else {
+		response = future.Response()
+	}
+	rpc.Respond(&ForwardApplyResponse{
+		RPCHeader: r.getRPCHeader(),
+		Response:  response,
+	}, nil)
 }
 
 // setLatestConfiguration stores the latest configuration and updates a copy of it.
