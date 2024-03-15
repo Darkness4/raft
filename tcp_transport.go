@@ -95,6 +95,10 @@ func newTCPTransport(bindAddr string,
 	return trans, nil
 }
 
+func (t *TCPStreamLayer) PublicAddress() ServerAddress {
+	return ServerAddress(t.listener.Addr().String())
+}
+
 // Dial implements the StreamLayer interface.
 func (t *TCPStreamLayer) Dial(address ServerAddress, timeout time.Duration) (net.Conn, error) {
 	return net.DialTimeout("tcp", string(address), timeout)

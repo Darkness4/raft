@@ -691,7 +691,12 @@ func TestNetworkTransport_EncodeDecode(t *testing.T) {
 
 func TestNetworkTransport_EncodeDecode_AddressProvider(t *testing.T) {
 	addressOverride := "localhost:11111"
-	config := &NetworkTransportConfig{MaxPool: 2, Timeout: time.Second, Logger: newTestLogger(t), ServerAddressProvider: &testAddrProvider{addressOverride}}
+	config := &NetworkTransportConfig{
+		MaxPool:               2,
+		Timeout:               time.Second,
+		Logger:                newTestLogger(t),
+		ServerAddressProvider: &testAddrProvider{addressOverride},
+	}
 	trans1, err := NewTCPTransportWithConfig("localhost:0", nil, config)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -807,7 +812,11 @@ func TestNetworkTransport_PooledConn(t *testing.T) {
 	}
 }
 
-func makeTransport(t *testing.T, useAddrProvider bool, addressOverride string) (*NetworkTransport, error) {
+func makeTransport(
+	t *testing.T,
+	useAddrProvider bool,
+	addressOverride string,
+) (*NetworkTransport, error) {
 	config := &NetworkTransportConfig{
 		MaxPool: 2,
 		// Setting this because older tests for pipelining were written when this
@@ -849,11 +858,18 @@ func (sl testCountingStreamLayer) Close() error {
 	return nil
 }
 
+func (sl testCountingStreamLayer) PublicAddress() ServerAddress {
+	return ServerAddress(sl.Addr().String())
+}
+
 func (sl testCountingStreamLayer) Addr() net.Addr {
 	panic("not needed")
 }
 
-func (sl testCountingStreamLayer) Dial(address ServerAddress, timeout time.Duration) (net.Conn, error) {
+func (sl testCountingStreamLayer) Dial(
+	address ServerAddress,
+	timeout time.Duration,
+) (net.Conn, error) {
 	return nil, fmt.Errorf("not needed")
 }
 

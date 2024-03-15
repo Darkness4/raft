@@ -178,6 +178,8 @@ type ServerAddressProvider interface {
 type StreamLayer interface {
 	net.Listener
 
+	PublicAddress() ServerAddress
+
 	// Dial is used to create a new outgoing connection
 	Dial(address ServerAddress, timeout time.Duration) (net.Conn, error)
 }
@@ -358,7 +360,7 @@ func (n *NetworkTransport) Consumer() <-chan RPC {
 
 // LocalAddr implements the Transport interface.
 func (n *NetworkTransport) LocalAddr() ServerAddress {
-	return ServerAddress(n.stream.Addr().String())
+	return ServerAddress(n.stream.PublicAddress())
 }
 
 // IsShutdown is used to check if the transport is shutdown.
